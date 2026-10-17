@@ -1,4 +1,12 @@
-import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export default class BillPaymentWriteDTO {
   @IsNotEmpty({ message: 'Amount is required' })
@@ -17,6 +25,11 @@ export default class BillPaymentWriteDTO {
   @IsNotEmpty({ message: 'Bank/Cash account is required' })
   @IsString()
   bankAccountId!: string;
+
+  @IsNotEmpty({ message: 'Idempotency key is required' })
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey!: string;
 
   @IsOptional()
   @IsString()

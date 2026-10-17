@@ -26,8 +26,10 @@ function createFixture(amountPaid = 40) {
   const date = Timestamp.fromDate(new Date('2026-10-17T00:00:00Z'));
   const dto = Object.assign(new PaymentRequestDTO(), {
     billId: 'bill-1',
+    idempotencyKey: 'request-1',
     chartOfAccountId: 'bank-chart',
     amount: amountPaid,
+    paymentDate: '2026-10-17',
   });
   const payment = Object.assign(new Payment(), {
     amountPaid,
@@ -62,6 +64,7 @@ function createFixture(amountPaid = 40) {
     totalCredits: 100,
   });
   let billFound: Bill | null = bill;
+  let existingPayment: Payment | null = null;
   let supplierExists = true;
   const transactionId = 'tx-123';
   const run = mock.fn(async <T>(operation: (id: string) => Promise<T>) =>
@@ -69,6 +72,7 @@ function createFixture(amountPaid = 40) {
   );
   const map = mock.fn((_source: PaymentRequestDTO) => payment);
   const getBill = mock.fn(async (_id: string, _tx?: string) => billFound);
+  const getPayment = mock.fn(async (_id: string, _tx?: string) => existingPayment);
   const getChart = mock.fn(async (id: string, _tx?: string) =>
     id === 'bank-chart' ? bankChart : id === ACCOUNTS_PAYABLE_ACCOUNT_ID ? apChart : null,
   );
@@ -89,7 +93,7 @@ function createFixture(amountPaid = 40) {
     { getById: getChart, update: updateChart } as unknown as IChartOfAccountsRepository,
     { create: createJournal } as unknown as IJournalEntriesRepository,
     { batchCreate } as unknown as IJournalEntryLinesRepository,
-    { create: createPayment } as unknown as IPaymentsRepository,
+    { getById: getPayment, create: createPayment } as unknown as IPaymentsRepository,
     { run } as unknown as ITransactionManager,
     { map } as unknown as IAutoMapper<PaymentRequestDTO, Payment>,
   );
@@ -110,6 +114,7 @@ function createFixture(amountPaid = 40) {
     run,
     map,
     getBill,
+    getPayment,
     getChart,
     exists,
     createJournal,
@@ -120,6 +125,9 @@ function createFixture(amountPaid = 40) {
     noWrites,
     setBill(value: Bill | null) {
       billFound = value;
+    },
+    setExistingPayment(value: Payment | null) {
+      existingPayment = value;
     },
     setBank(value: ChartOfAccount | null) {
       bankChart = value;
@@ -134,12 +142,69 @@ function createFixture(amountPaid = 40) {
 }
 
 describe('BillPaymentStrategy', () => {
+  it('requires an idempotency key before opening a transaction', async () => {
+    const fixture = createFixture();
+    fixture.dto.idempotencyKey = '   ';
+
+    const result = await fixture.strategy.processPayment();
+
+    assert.equal(result.type, 'Validation');
+    assert.equal(fixture.run.mock.callCount(), 0);
+    fixture.noWrites();
+  });
+
+  it('rejects a nonpositive mapped payment before reading a bill or writing', async () => {
+    const fixture = createFixture(0);
+
+    const result = await fixture.strategy.processPayment();
+
+    assert.equal(result.type, 'Validation');
+    assert.equal(fixture.getBill.mock.callCount(), 0);
+    fixture.noWrites();
+  });
+
+  it('returns success for the same request key without posting a second payment', async () => {
+    const fixture = createFixture(80);
+    assert.equal((await fixture.strategy.processPayment()).type, 'Success');
+    fixture.setExistingPayment(fixture.payment);
+
+    const result = await fixture.strategy.processPayment();
+
+    assert.equal(result.type, 'Success');
+    assert.match(fixture.payment.id, /^bill_payment_[0-9a-f]{64}$/);
+    assert.equal(fixture.payment.idempotencyKey, 'request-1');
+    assert.match(fixture.payment.idempotencyFingerprint, /^[0-9a-f]{64}$/);
+    assert.equal(fixture.getPayment.mock.callCount(), 2);
+    assert.equal(fixture.getBill.mock.callCount(), 1);
+    assert.equal(fixture.createJournal.mock.callCount(), 1);
+    assert.equal(fixture.createPayment.mock.callCount(), 1);
+    assert.equal(fixture.bill.amountDue, 0);
+  });
+
+  it('rejects reuse of a key for changed payment details', async () => {
+    const fixture = createFixture();
+    assert.equal((await fixture.strategy.processPayment()).type, 'Success');
+    fixture.setExistingPayment(fixture.payment);
+    fixture.dto.amount = 50;
+
+    const result = await fixture.strategy.processPayment();
+
+    assert.equal(result.type, 'Conflict');
+    assert.match(result.message, /already used/);
+    assert.equal(fixture.getBill.mock.callCount(), 1);
+    assert.equal(fixture.createPayment.mock.callCount(), 1);
+  });
+
   it('reads the bill and accounts within one transaction', async () => {
     const fixture = createFixture();
     const result = await fixture.strategy.processPayment();
 
     assert.equal(result.type, 'Success');
     assert.equal(fixture.run.mock.callCount(), 1);
+    assert.deepEqual(fixture.getPayment.mock.calls[0].arguments, [
+      fixture.payment.id,
+      fixture.transactionId,
+    ]);
     assert.deepEqual(fixture.getBill.mock.calls[0].arguments, [
       'bill-1',
       fixture.transactionId,

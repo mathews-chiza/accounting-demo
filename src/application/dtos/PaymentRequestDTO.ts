@@ -1,90 +1,122 @@
-import { IsArray, IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, ValidateIf } from "class-validator";
-import PaymentType from "../../domain/enums/PaymentType";
-import PaymentMethod from "../../domain/enums/PaymentMethod";
-import { Type } from "class-transformer";
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
+import PaymentType from '../../domain/enums/PaymentType';
+import PaymentMethod from '../../domain/enums/PaymentMethod';
+import { Type } from 'class-transformer';
 
 const paymentTypes = Object.values(PaymentType);
 
 class PaymentCustomerRequestDTO {
-    @IsNotEmpty()
-    @IsString()
-    name!: string;
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
 
-    @IsOptional()
-    @IsString()
-    address?: string;
+  @IsOptional()
+  @IsString()
+  address?: string;
 
-    @IsOptional()
-    @IsString()
-    phone?: string;
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
-    @IsOptional()
-    @IsString()
-    email?: string;
+  @IsOptional()
+  @IsString()
+  email?: string;
 }
 
 class PaymentRequestDTO {
-    @ValidateIf((dto) => !dto.categoryId && !dto.billId, { message: 'Either feeId, categoryId, or billId must be provided' })
-    @IsNotEmpty()
-    @IsString()
-    feeId?: string;
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey!: string;
 
-    @ValidateIf((dto) => !dto.feeId && !dto.billId && (dto.paymentType === PaymentType.INCOME || dto.paymentType === PaymentType.EXPENSE), { message: 'categoryId is required for income and expense payments' })
-    @IsNotEmpty()
-    @IsString()
-    categoryId?: string;
+  bankAccountId?: string;
 
-    @ValidateIf((dto) => dto.paymentType === PaymentType.BILL, { message: 'billId is required for bill payments' })
-    @IsNotEmpty()
-    @IsString()
-    billId?: string;
-    
-    @IsNotEmpty()
-    @IsNumber()
-    @IsPositive({ message: 'Amount must be a positive number' })
-    amount!: number;
+  @ValidateIf((dto) => !dto.categoryId && !dto.billId, {
+    message: 'Either feeId, categoryId, or billId must be provided',
+  })
+  @IsNotEmpty()
+  @IsString()
+  feeId?: string;
 
-    @ValidateIf((dto) => !dto.feeId)
-    @IsNotEmpty()
-    @IsString()
-    @IsIn(paymentTypes, { message: `Payment type must be one of the following: ${paymentTypes.join(', ')}` })
-    paymentType?: string;
+  @ValidateIf(
+    (dto) =>
+      !dto.feeId &&
+      !dto.billId &&
+      (dto.paymentType === PaymentType.INCOME || dto.paymentType === PaymentType.EXPENSE),
+    { message: 'categoryId is required for income and expense payments' },
+  )
+  @IsNotEmpty()
+  @IsString()
+  categoryId?: string;
 
-    @IsOptional()
-    @IsString()
-    @IsIn(Object.values(PaymentMethod), { message: `Payment method must be one of the following: ${Object.values(PaymentMethod).join(', ')}` })
-    paymentMethod?: string;
+  @ValidateIf((dto) => dto.paymentType === PaymentType.BILL, {
+    message: 'billId is required for bill payments',
+  })
+  @IsNotEmpty()
+  @IsString()
+  billId?: string;
 
-    @IsNotEmpty()
-    @IsDateString()
-    paymentDate?: string;
+  @IsNotEmpty()
+  @IsNumber()
+  @IsPositive({ message: 'Amount must be a positive number' })
+  amount!: number;
 
-    attachmentUrl?: string;
+  @ValidateIf((dto) => !dto.feeId)
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(paymentTypes, {
+    message: `Payment type must be one of the following: ${paymentTypes.join(', ')}`,
+  })
+  paymentType?: string;
 
-    @IsOptional()
-    @IsString()
-    externalReference?: string;
+  @IsOptional()
+  @IsString()
+  @IsIn(Object.values(PaymentMethod), {
+    message: `Payment method must be one of the following: ${Object.values(PaymentMethod).join(', ')}`,
+  })
+  paymentMethod?: string;
 
-    @IsOptional()
-    @IsString()
-    comments?: string;
+  @IsNotEmpty()
+  @IsDateString()
+  paymentDate?: string;
 
-    @IsNotEmpty()
-    @IsString()
-    chartOfAccountId!: string;
+  attachmentUrl?: string;
 
-    @IsOptional()
-    @IsString()
-    studentId?: string | null;
+  @IsOptional()
+  @IsString()
+  externalReference?: string;
 
-    @ValidateIf((dto) => dto.paymentType === PaymentType.INCOME && !dto.studentId)
-    @IsOptional()
-    @Type(() => PaymentCustomerRequestDTO)
-    customer?: PaymentCustomerRequestDTO;
+  @IsOptional()
+  @IsString()
+  comments?: string;
 
-    @IsOptional()
-    @IsArray()
-    files?: any[];
-};
+  @IsNotEmpty()
+  @IsString()
+  chartOfAccountId!: string;
+
+  @IsOptional()
+  @IsString()
+  studentId?: string | null;
+
+  @ValidateIf((dto) => dto.paymentType === PaymentType.INCOME && !dto.studentId)
+  @IsOptional()
+  @Type(() => PaymentCustomerRequestDTO)
+  customer?: PaymentCustomerRequestDTO;
+
+  @IsOptional()
+  @IsArray()
+  files?: any[];
+}
 
 export default PaymentRequestDTO;

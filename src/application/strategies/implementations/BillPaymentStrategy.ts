@@ -1,22 +1,23 @@
-import Bill from "../../../domain/entities/Bill";
-import ChartOfAccount from "../../../domain/entities/ChartOfAccount";
-import Payment from "../../../domain/entities/Payment";
-import BillStatus from "../../../domain/enums/BillStatus";
-import ChartOfAccountType from "../../../domain/enums/ChartOfAccountType";
-import JournalType from "../../../domain/enums/JournalType";
-import PaymentType from "../../../domain/enums/PaymentType";
-import IBillsRepository from "../../../domain/interfaces/IBillsRepository";
-import IChartOfAccountsRepository from "../../../domain/interfaces/IChartOfAccountsRepository";
-import IJournalEntriesRepository from "../../../domain/interfaces/IJournalEntriesRepository";
-import IJournalEntryLinesRepository from "../../../domain/interfaces/IJournalEntryLinesRepository";
-import IPaymentsRepository from "../../../domain/interfaces/IPaymentsRepository";
-import ISuppliersRepository from "../../../domain/interfaces/ISuppliersRepository";
-import ITransactionManager from "../../../domain/services/ITransactionManager";
-import { ACCOUNTS_PAYABLE_ACCOUNT_ID, Collections } from "../../constants";
-import PaymentRequestDTO from "../../dtos/PaymentRequestDTO";
-import IAutoMapper from "../../services/IAutoMapper";
-import Result from "../../types/Result";
-import IPaymentStrategy from "../IPaymentStrategy";
+import Bill from '../../../domain/entities/Bill';
+import ChartOfAccount from '../../../domain/entities/ChartOfAccount';
+import Payment from '../../../domain/entities/Payment';
+import BillStatus from '../../../domain/enums/BillStatus';
+import ChartOfAccountType from '../../../domain/enums/ChartOfAccountType';
+import JournalType from '../../../domain/enums/JournalType';
+import PaymentType from '../../../domain/enums/PaymentType';
+import IBillsRepository from '../../../domain/interfaces/IBillsRepository';
+import IChartOfAccountsRepository from '../../../domain/interfaces/IChartOfAccountsRepository';
+import IJournalEntriesRepository from '../../../domain/interfaces/IJournalEntriesRepository';
+import IJournalEntryLinesRepository from '../../../domain/interfaces/IJournalEntryLinesRepository';
+import IPaymentsRepository from '../../../domain/interfaces/IPaymentsRepository';
+import ISuppliersRepository from '../../../domain/interfaces/ISuppliersRepository';
+import ITransactionManager from '../../../domain/services/ITransactionManager';
+import { ACCOUNTS_PAYABLE_ACCOUNT_ID, Collections } from '../../constants';
+import PaymentRequestDTO from '../../dtos/PaymentRequestDTO';
+import IAutoMapper from '../../services/IAutoMapper';
+import Result from '../../types/Result';
+import IPaymentStrategy from '../IPaymentStrategy';
+import { createHash } from 'node:crypto';
 
 export default class BillPaymentStrategy implements IPaymentStrategy {
   constructor(
@@ -32,29 +33,56 @@ export default class BillPaymentStrategy implements IPaymentStrategy {
   ) {}
 
   async processPayment(): Promise<Result> {
-    return this.transactionManager.run(async (transactionId) => {
-      const payment = this.mapper.map(this.dto);
+    const key = this.dto.idempotencyKey?.trim();
+    if (!key || key.length > 128) {
+      return Result.failed('Validation', 'A valid idempotency key is required.');
+    }
 
-      const bill = await this.billsRepository.getById(
-        this.dto.billId!,
-        transactionId,
-      );
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify([
+          this.dto.billId,
+          this.dto.amount,
+          this.dto.paymentDate,
+          this.dto.paymentMethod,
+          this.dto.bankAccountId,
+          this.dto.chartOfAccountId,
+          this.dto.comments,
+          this.dto.externalReference,
+          this.dto.attachmentUrl,
+        ]),
+      )
+      .digest('hex');
+    const paymentId = `bill_payment_${createHash('sha256').update(key).digest('hex')}`;
+
+    return this.transactionManager.run(async (transactionId) => {
+      const existing = await this.paymentsRepository.getById(paymentId, transactionId);
+      if (existing) {
+        return existing.idempotencyKey === key &&
+          existing.idempotencyFingerprint === fingerprint
+          ? Result.success()
+          : Result.conflict('Idempotency key was already used for a different payment.');
+      }
+
+      const payment = this.mapper.map(this.dto);
+      if (!Number.isFinite(payment.amountPaid) || payment.amountPaid <= 0) {
+        return Result.failed('Validation', 'Payment amount must be positive.');
+      }
+      payment.id = paymentId;
+      payment.idempotencyKey = key;
+      payment.idempotencyFingerprint = fingerprint;
+
+      const bill = await this.billsRepository.getById(this.dto.billId!, transactionId);
       if (!bill) {
         return Result.notFound('Bill not found.');
       }
 
       if (bill.status === BillStatus.PAID) {
-        return Result.failed(
-          'Validation',
-          'This bill has already been fully paid.',
-        );
+        return Result.failed('Validation', 'This bill has already been fully paid.');
       }
 
       if (bill.status === BillStatus.CANCELLED) {
-        return Result.failed(
-          'Validation',
-          'Cannot record payment for a cancelled bill.',
-        );
+        return Result.failed('Validation', 'Cannot record payment for a cancelled bill.');
       }
 
       if (payment.amountPaid > bill.amountDue) {
@@ -65,10 +93,7 @@ export default class BillPaymentStrategy implements IPaymentStrategy {
       }
 
       const [bankChart, apChart] = await Promise.all([
-        this.chartOfAccountsRepository.getById(
-          payment.chartOfAccountId,
-          transactionId,
-        ),
+        this.chartOfAccountsRepository.getById(payment.chartOfAccountId, transactionId),
         this.chartOfAccountsRepository.getById(
           ACCOUNTS_PAYABLE_ACCOUNT_ID,
           transactionId,
@@ -103,13 +128,7 @@ export default class BillPaymentStrategy implements IPaymentStrategy {
         return Result.notFound('Supplier not found.');
       }
 
-      return this.processBillPayment(
-        payment,
-        bill,
-        bankChart,
-        apChart,
-        transactionId,
-      );
+      return this.processBillPayment(payment, bill, bankChart, apChart, transactionId);
     });
   }
 
@@ -171,21 +190,12 @@ export default class BillPaymentStrategy implements IPaymentStrategy {
     // Update bill amounts and status
     bill.amountPaid += payment.amountPaid;
     bill.amountDue -= payment.amountPaid;
-    bill.status =
-      bill.amountDue === 0 ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
+    bill.status = bill.amountDue === 0 ? BillStatus.PAID : BillStatus.PARTIALLY_PAID;
 
     await this.paymentsRepository.create(payment, transactionId);
     await this.billsRepository.update(bill.id, bill, transactionId);
-    await this.chartOfAccountsRepository.update(
-      apChart.id,
-      apChart,
-      transactionId,
-    );
-    await this.chartOfAccountsRepository.update(
-      bankChart.id,
-      bankChart,
-      transactionId,
-    );
+    await this.chartOfAccountsRepository.update(apChart.id, apChart, transactionId);
+    await this.chartOfAccountsRepository.update(bankChart.id, bankChart, transactionId);
 
     return Result.success();
   }

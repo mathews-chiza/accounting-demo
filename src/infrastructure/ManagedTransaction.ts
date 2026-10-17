@@ -1,4 +1,8 @@
-import { DocumentReference, DocumentSnapshot, Transaction } from "firebase-admin/firestore";
+import {
+  DocumentReference,
+  DocumentSnapshot,
+  Transaction,
+} from 'firebase-admin/firestore';
 
 export default class ManagedTransaction {
   private readonly reads = new Map<string, DocumentSnapshot>();
@@ -15,6 +19,14 @@ export default class ManagedTransaction {
     return snapshot;
   }
 
+  async exists(ref: DocumentReference): Promise<boolean> {
+    if (this.hasWrites) {
+      throw new Error('Transaction reads must precede writes.');
+    }
+    const [snapshot] = await this.transaction.getAll(ref, { fieldMask: [] });
+    return snapshot.exists;
+  }
+
   async getBeforeWrite(ref: DocumentReference): Promise<DocumentSnapshot> {
     const cached = this.reads.get(ref.path);
     return cached ?? this.get(ref);
@@ -23,6 +35,11 @@ export default class ManagedTransaction {
   set(ref: DocumentReference, data: object): void {
     this.hasWrites = true;
     this.transaction.set(ref, data);
+  }
+
+  create(ref: DocumentReference, data: object): void {
+    this.hasWrites = true;
+    this.transaction.create(ref, data);
   }
 
   update(ref: DocumentReference, data: object): void {

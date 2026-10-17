@@ -16,8 +16,9 @@ function createFixture() {
     ref.path === billRef.path ? billSnapshot : accountSnapshot,
   );
   const set = mock.fn((_ref: DocumentReference, _data: object) => undefined);
+  const create = mock.fn((_ref: DocumentReference, _data: object) => undefined);
   const update = mock.fn((_ref: DocumentReference, _data: object) => undefined);
-  const transaction = { get, set, update } as unknown as Transaction;
+  const transaction = { get, set, create, update } as unknown as Transaction;
   const managed = new ManagedTransaction(transaction);
 
   return {
@@ -27,6 +28,7 @@ function createFixture() {
     accountSnapshot,
     get,
     set,
+    create,
     update,
     transaction,
     managed,
@@ -59,22 +61,24 @@ describe('ManagedTransaction', () => {
     assert.equal(fixture.get.mock.callCount(), 1);
   });
 
-  it('delegates set and update to the Firestore transaction', () => {
+  it('delegates create, set and update to the Firestore transaction', () => {
     const fixture = createFixture();
     const billData = { amountDue: 40 };
     const accountData = { totalCredits: 52 };
 
     fixture.managed.set(fixture.billRef, billData);
+    fixture.managed.create(fixture.billRef, billData);
     fixture.managed.update(fixture.accountRef, accountData);
 
     assert.deepEqual(fixture.set.mock.calls[0].arguments, [fixture.billRef, billData]);
+    assert.deepEqual(fixture.create.mock.calls[0].arguments, [fixture.billRef, billData]);
     assert.deepEqual(fixture.update.mock.calls[0].arguments, [
       fixture.accountRef,
       accountData,
     ]);
   });
 
-  for (const write of ['set', 'update'] as const) {
+  for (const write of ['create', 'set', 'update'] as const) {
     it(`rejects new reads after ${write} and retains earlier cached reads`, async () => {
       const fixture = createFixture();
       await fixture.managed.get(fixture.billRef);

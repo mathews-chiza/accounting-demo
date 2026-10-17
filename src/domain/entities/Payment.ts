@@ -1,15 +1,18 @@
-import { Timestamp } from "firebase-admin/firestore";
-import PaymentMethod from "../enums/PaymentMethod";
-import BaseEntity from "./base/BaseEntity";
-import PaymentType from "../enums/PaymentType";
+import { Timestamp } from 'firebase-admin/firestore';
+import PaymentMethod from '../enums/PaymentMethod';
+import BaseEntity from './base/BaseEntity';
+import PaymentType from '../enums/PaymentType';
 
-export default class Payment extends BaseEntity
-{
+export default class Payment extends BaseEntity {
   paymentMethod!: PaymentMethod;
 
   amountPaid!: number;
 
   receiptNumber?: number;
+
+  idempotencyKey!: string;
+
+  idempotencyFingerprint!: string;
 
   paymentDate!: Timestamp;
 

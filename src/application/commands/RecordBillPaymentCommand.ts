@@ -1,10 +1,11 @@
-import IBankAccountsRepository from "../../domain/interfaces/IBankAccountsRepository";
-import BillPaymentWriteDTO from "../dtos/BillPaymentWriteDTO";
-import PaymentRequestDTO from "../dtos/PaymentRequestDTO";
-import IAuthenticatedUserService from "../services/IAuthenticatedUserService";
-import IAutoMapper from "../services/IAutoMapper";
-import { IPaymentStrategyFactory } from "../strategies/factory/IPaymentStrategyFactory";
-import Result from "../types/Result";
+import IBankAccountsRepository from '../../domain/interfaces/IBankAccountsRepository';
+import BillPaymentWriteDTO from '../dtos/BillPaymentWriteDTO';
+import PaymentRequestDTO from '../dtos/PaymentRequestDTO';
+import IAuthenticatedUserService from '../services/IAuthenticatedUserService';
+import IAutoMapper from '../services/IAutoMapper';
+import { IPaymentStrategyFactory } from '../strategies/factory/IPaymentStrategyFactory';
+import Result from '../types/Result';
+import PaymentType from '../../domain/enums/PaymentType';
 
 export class RecordBillPaymentCommand {
   constructor(
@@ -23,9 +24,7 @@ export class RecordBillPaymentCommandHandler {
 
   async handle(command: RecordBillPaymentCommand): Promise<Result> {
     if (!this.authService.isAdmin() && !this.authService.isAccountant()) {
-      return Result.unauthorized(
-        'You do not have permission to record bill payments.',
-      );
+      return Result.unauthorized('You do not have permission to record bill payments.');
     }
 
     // Look up bank account to get chartOfAccountId
@@ -39,7 +38,10 @@ export class RecordBillPaymentCommandHandler {
     // Construct PaymentRequestDTO for the strategy
     const paymentRequest: PaymentRequestDTO = this.mapper.map(command.dto);
     paymentRequest.billId = command.billId;
+    paymentRequest.bankAccountId = command.dto.bankAccountId;
+    paymentRequest.idempotencyKey = command.dto.idempotencyKey;
     paymentRequest.chartOfAccountId = bankAccount.chartOfAccountId;
+    paymentRequest.paymentType = PaymentType.BILL;
 
     const strategy = this.strategy.getStrategy(paymentRequest);
 

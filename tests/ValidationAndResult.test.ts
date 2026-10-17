@@ -13,6 +13,7 @@ const billWrite = () =>
     paymentDate: '2026-10-17',
     paymentMethod: PaymentMethod.CASH,
     bankAccountId: 'bank-1',
+    idempotencyKey: 'request-1',
   });
 const paymentRequest = () =>
   Object.assign(new PaymentRequestDTO(), {
@@ -22,6 +23,7 @@ const paymentRequest = () =>
     chartOfAccountId: 'bank-chart',
     paymentType: PaymentType.BILL,
     billId: 'bill-1',
+    idempotencyKey: 'request-1',
   });
 
 describe('BillPaymentWriteDTO validation', () => {
@@ -43,6 +45,9 @@ describe('BillPaymentWriteDTO validation', () => {
     ['paymentMethod', 3],
     ['bankAccountId', undefined],
     ['bankAccountId', 3],
+    ['idempotencyKey', undefined],
+    ['idempotencyKey', ''],
+    ['idempotencyKey', 'x'.repeat(129)],
     ['notes', 3],
   ] as const) {
     it(`rejects ${field}=${String(value)}`, async () => {
@@ -95,6 +100,8 @@ describe('PaymentRequestDTO validation', () => {
     ['externalReference', 5],
     ['comments', 5],
     ['files', 'attachment'],
+    ['idempotencyKey', undefined],
+    ['idempotencyKey', 'x'.repeat(129)],
   ] as const) {
     it(`rejects ${field}=${String(value)}`, async () => {
       const errors = await validate(Object.assign(paymentRequest(), { [field]: value }));

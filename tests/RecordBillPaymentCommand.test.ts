@@ -21,6 +21,7 @@ function createFixture(
   const dto = Object.assign(new BillPaymentWriteDTO(), {
     amount: 25,
     bankAccountId: 'bank-1',
+    idempotencyKey: 'request-1',
     paymentDate: '2026-10-17',
     paymentMethod: 'Cash',
   });
@@ -75,6 +76,9 @@ describe('RecordBillPaymentCommandHandler', () => {
       assert.strictEqual(fixture.getStrategy.mock.calls[0].arguments[0], fixture.mapped);
       assert.equal(fixture.mapped.billId, 'bill-1');
       assert.equal(fixture.mapped.chartOfAccountId, 'bank-chart');
+      assert.equal(fixture.mapped.bankAccountId, 'bank-1');
+      assert.equal(fixture.mapped.idempotencyKey, 'request-1');
+      assert.equal(fixture.mapped.paymentType, 'Bill');
       assert.equal(fixture.processPayment.mock.callCount(), 1);
     });
   }
