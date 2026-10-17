@@ -1,0 +1,35 @@
+{
+  "name": "accounting-demo",
+  "version": "1.0.0",
+  "description": "This demonstrates production-grade accounting principles in backend software systems. It uses double-entry accounting to ensure accuracy of transactions.",
+  "main": "index.js",
+  "scripts": {
+    "test": "tsx --import reflect-metadata --test tests/*.test.ts",
+    "test:typecheck": "tsc --noEmit -p tsconfig.tests.json",
+    "test:format": "prettier --check tests/**/*.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mathews-chiza/accounting-demo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mathews-chiza/accounting-demo/issues"
+  },
+  "homepage": "https://github.com/mathews-chiza/accounting-demo#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "firebase-admin": "^14.5.0",
+    "reflect-metadata": "^0.2.2"
+  }
+}
